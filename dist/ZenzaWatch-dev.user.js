@@ -17941,6 +17941,7 @@ class NicoCommentCss3PlayerView extends Emitter {
 		this._lastCurrentTime = 0;
 		this._isShow = true;
 		this._aspectRatio = 9 / 16;
+		this._effectiveLayerScale = 1;
 		this._inViewTable = new Set();
 		this._inSlotTable = new Set();
 		this._domTable = new Map();
@@ -18019,7 +18020,12 @@ class NicoCommentCss3PlayerView extends Emitter {
 				const aspectRatio = Math.max(this._aspectRatio, 9 / 16);
 				const targetHeight = Math.min(h, w * aspectRatio);
 				const scale = targetHeight / 384;
+				const dpr = win.devicePixelRatio || 1;
+				const effectiveScale = scale * dpr;
+				this._effectiveLayerScale = effectiveScale;
 				cssUtil.setProps([commentLayerOuter, '--layer-scale', cssUtil.number(scale)]);
+				ClassList(commentLayerOuter).toggle(
+					'is-largeScale', effectiveScale >= NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD);
 			};
 			const chkSizeInit = () => {
 				const h = win.innerHeight;
@@ -18261,13 +18267,24 @@ class NicoCommentCss3PlayerView extends Emitter {
 		this.isUpdating = false;
 	}
 	/*
+	* 同時表示コメント数の上限。
+	* 拡大率が大きい環境では1件あたりのラスタライズ面積が増えるので、
+	* 体感のコメント密度を保てる範囲で上限を下げる。
+	*/
+	_getMaxDisplayComment () {
+		const scale = this._effectiveLayerScale || 1;
+		return scale >= NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD ?
+			NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT_LARGE :
+			NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT;
+	}
+	/*
 	* 古い順に要素を除去していく
 	*/
 	_gcInviewElements () {
 		if (!this.commentLayer || !this._style) {
 			return;
 		}
-		const max = NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT;
+		const max = this._getMaxDisplayComment();
 		const commentLayer = this.commentLayer;
 		const elements = this.removingElements;
 		const af = this.window.Array.from; // prototype.js汚染を警戒
@@ -18414,6 +18431,8 @@ class NicoCommentCss3PlayerView extends Emitter {
 	}
 }
 NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT = 40;
+NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD = 5;
+NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT_LARGE = 24;
 /* eslint-disable */
 NicoCommentCss3PlayerView.__TPL__ = ((Config) => {
 	let ownerShadowColor = Config.props['commentLayer.ownerCommentShadowColor'];
@@ -18581,6 +18600,12 @@ body.in-capture .commentLayer {
 	font-smooth: auto;
 	text-rendering: optimizeSpeed;
 	font-kerning: none;*/
+}
+/* 4Kなど拡大率の大きい環境では、コメント1件ごとの合成レイヤーを
+	常時保持しない。transformアニメーション中はブラウザが自動的に
+	合成するため、見た目や動きは変わらない。 */
+.commentLayerOuter.is-largeScale .nicoChat {
+	will-change: auto !important;
 }
 .shadow-type2 .nicoChat {
 	text-shadow:
@@ -24379,7 +24404,6 @@ util.addStyle(`
 		border: 0 !important;
 		z-index: 100 !important;
 		contain: layout style size paint;
-		will-change: transform,opacity;
 	}
 	.resizeObserver {
 		z-index: -1;
@@ -24647,7 +24671,6 @@ NicoVideoPlayerDialogView.__css__ = `
 		border: 0;
 		z-index: 100;
 		background: #000;
-		will-change: transform, opacity;
 		user-select: none;
 	}
 	.is-mouseMoving .videoPlayer>* {

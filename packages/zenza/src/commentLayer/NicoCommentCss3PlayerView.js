@@ -33,6 +33,7 @@ class NicoCommentCss3PlayerView extends Emitter {
     this._isShow = true;
 
     this._aspectRatio = 9 / 16;
+    this._effectiveLayerScale = 1;
 
     this._inViewTable = new Set();
     this._inSlotTable = new Set();
@@ -139,7 +140,17 @@ class NicoCommentCss3PlayerView extends Emitter {
         const aspectRatio = Math.max(this._aspectRatio, 9 / 16);
         const targetHeight = Math.min(h, w * aspectRatio);
         const scale = targetHeight / 384;
+        // 実際のラスタライズ面積は CSS上の拡大率 × devicePixelRatio で決まる。
+        // 4KをOSのスケーリング(150%/200%)で使う場合も同じ負荷になるため、
+        // 見た目のCSSサイズではなく実効的な拡大率で判定する。
+        const dpr = win.devicePixelRatio || 1;
+        const effectiveScale = scale * dpr;
+        this._effectiveLayerScale = effectiveScale;
         cssUtil.setProps([commentLayerOuter, '--layer-scale', cssUtil.number(scale)]);
+        // 4Kのような高解像度環境では、コメント1件ごとの合成レイヤーが
+        // 巨大になりGPUメモリと描画負荷を圧迫するため軽量モードに切り替える
+        ClassList(commentLayerOuter).toggle(
+          'is-largeScale', effectiveScale >= NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD);
       };
 
       const chkSizeInit = () => {
@@ -409,6 +420,17 @@ class NicoCommentCss3PlayerView extends Emitter {
     // performance.measure('updateDom');
   }
   /*
+  * 同時表示コメント数の上限。
+  * 拡大率が大きい環境では1件あたりのラスタライズ面積が増えるので、
+  * 体感のコメント密度を保てる範囲で上限を下げる。
+  */
+  _getMaxDisplayComment () {
+    const scale = this._effectiveLayerScale || 1;
+    return scale >= NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD ?
+      NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT_LARGE :
+      NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT;
+  }
+  /*
   * 古い順に要素を除去していく
   */
   _gcInviewElements () {
@@ -416,7 +438,7 @@ class NicoCommentCss3PlayerView extends Emitter {
       return;
     }
 
-    const max = NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT;
+    const max = this._getMaxDisplayComment();
 
     const commentLayer = this.commentLayer;
     const elements = this.removingElements;
@@ -589,6 +611,11 @@ class NicoCommentCss3PlayerView extends Emitter {
 }
 
 NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT = 40;
+// 実効拡大率(CSS拡大率 × devicePixelRatio)が5を超えると、
+// コメント1件の合成レイヤーが1080pの4倍以上の面積になる。
+// 4K(2160p, DPR1)は 2160/384 = 5.625 で該当する。
+NicoCommentCss3PlayerView.LARGE_SCALE_THRESHOLD = 5;
+NicoCommentCss3PlayerView.MAX_DISPLAY_COMMENT_LARGE = 24;
 /* eslint-disable */
 NicoCommentCss3PlayerView.__TPL__ = ((Config) => {
   let ownerShadowColor = Config.props['commentLayer.ownerCommentShadowColor'];
@@ -771,6 +798,13 @@ body.in-capture .commentLayer {
   font-smooth: auto;
   text-rendering: optimizeSpeed;
   font-kerning: none;*/
+}
+
+/* 4Kなど拡大率の大きい環境では、コメント1件ごとの合成レイヤーを
+   常時保持しない。transformアニメーション中はブラウザが自動的に
+   合成するため、見た目や動きは変わらない。 */
+.commentLayerOuter.is-largeScale .nicoChat {
+  will-change: auto !important;
 }
 
 .shadow-type2 .nicoChat {

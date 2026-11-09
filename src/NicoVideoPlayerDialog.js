@@ -732,7 +732,6 @@ util.addStyle(`
     border: 0 !important;
     z-index: 100 !important;
     contain: layout style size paint;
-    will-change: transform,opacity;
   }
   .resizeObserver {
     z-index: -1;
@@ -1046,7 +1045,6 @@ NicoVideoPlayerDialogView.__css__ = `
     border: 0;
     z-index: 100;
     background: #000;
-    will-change: transform, opacity;
     user-select: none;
   }
 
